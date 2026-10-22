@@ -13,6 +13,9 @@ printing, or further processing.
 | --- | --- |
 | `render_script(script, seed?, output_path?, timeout?)` | Run an EisenScript grammar → `.obj` mesh; returns path, vertex/face counts, bounding box. |
 | `validate_script(script)` | Parse-check a grammar without keeping geometry. |
+| `analyze_script(script)` | Linter: braces, unknown actions, unsupported primitives, recursion without `maxdepth` (timeout risk), unused rules. |
+| `eisenscript_reference()` | Embedded EisenScript cheat sheet (primitives, transformations, modifiers). |
+| `export_mesh_tool(obj_path, format, output_path?)` | Convert OBJ → `stl`/`glb`/`gltf`/`ply`/`off` (requires optional `trimesh`). |
 | `list_examples()` | Browse bundled example grammars. |
 | `get_example(name)` | Fetch the full source of an example. |
 | `engine_status()` | Locate the render engine binary / install hint. |
@@ -47,7 +50,8 @@ exports OBJ from the command line. This MCP server is a thin Python wrapper.
 ```bash
 git clone https://github.com/Astrid3333/structuresynth-mcp.git
 cd structuresynth-mcp
-uv sync
+uv sync                    # core
+uv sync --extra export     # + trimesh for STL/glTF export
 ```
 
 ## Run

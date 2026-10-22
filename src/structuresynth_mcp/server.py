@@ -9,7 +9,10 @@ from pathlib import Path
 from mcp.server.mcpserver import MCPServer
 
 from . import examples_meta
+from .analyze import analyze
 from .engine import RenderResult, ScriptError, find_ssynthgen, render, validate
+from .export import ExportError, export_mesh
+from .reference import get_reference
 
 mcp = MCPServer(
     "structuresynth",
@@ -101,6 +104,58 @@ def render_script(
     if result.bbox_min is not None and result.bbox_max is not None:
         lines.append(f"BBox: {result.bbox_min} → {result.bbox_max}")
     return "\n".join(lines)
+
+
+@mcp.tool()
+def analyze_script(script: str) -> str:
+    """Lint an EisenScript without running it.
+
+    Detects: unbalanced braces, unknown actions, primitives unsupported by this
+    backend (torus/cone/tube/helix/circle/point), recursion cycles with no
+    maxdepth (timeout risk), unused rules. Returns a human-readable report.
+    """
+    res = analyze(script)
+    lines: list[str] = []
+    if res.errors:
+        lines.append("ERRORS:")
+        lines.extend(f"  - {e}" for e in res.errors)
+    if res.warnings:
+        lines.append("WARNINGS:")
+        lines.extend(f"  - {w}" for w in res.warnings)
+    info = res.info
+    lines.append(
+        f"INFO: {info.get('rule_count', 0)} rule(s); "
+        f"global maxdepth={info.get('global_maxdepth')}; "
+        f"seed={'yes' if info.get('has_seed') else 'no'}"
+    )
+    if info.get("cycles"):
+        lines.append(f"Recursion cycles: {', '.join(info['cycles'])}")
+    if not res.errors and not res.warnings:
+        lines.append("No problems found.")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def eisenscript_reference() -> str:
+    """EisenScript language cheat sheet: primitives, transformations,
+    modifiers, preprocessor, and timeout-avoidance tips (libssynth backend)."""
+    return get_reference()
+
+
+@mcp.tool()
+def export_mesh_tool(obj_path: str, format: str = "stl", output_path: str = "") -> str:
+    """Convert a rendered OBJ to another mesh format (stl, glb, gltf, ply, off).
+
+    Requires the optional dependency `trimesh` (uv add trimesh).
+    """
+    try:
+        out = export_mesh(obj_path, output_path or None, fmt=format)
+    except ExportError as e:
+        return f"Error: {e}"
+    except Exception as e:
+        return f"Error: {e}"
+    size = Path(out).stat().st_size
+    return f"Exported: {out} ({size} bytes, format={format.lower().lstrip('.')})"
 
 
 def main() -> None:
