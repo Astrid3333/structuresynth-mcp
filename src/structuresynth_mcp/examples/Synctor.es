@@ -24,7 +24,7 @@ rule spiral w 3 {
 } 
 
 rule start {
- set seed initial
+ set seed 42
  { rx 15 } spiral
  { ry 180 h 3 } spiral
 }

@@ -12,7 +12,7 @@ from pathlib import Path
 
 DEFAULT_TIMEOUT = 120
 
-_SEED_RE = re.compile(r"^\s*set\s+seed\b", re.MULTILINE)
+_SEED_RE = re.compile(r"^\s*set\s+seed\s+\S+", re.MULTILINE)
 
 
 class EngineNotFound(RuntimeError):
@@ -106,12 +106,12 @@ def render(script: str, output_path: str | Path, seed: int | None = None,
 
     if proc.returncode != 0:
         out.unlink(missing_ok=True)
-        # libssynth aborts on parse errors (exceptions don't inherit std::exception),
-        # so the useful signal is the exit code plus any stderr text.
         stderr = (proc.stderr or b"").decode("utf-8", "replace").strip()
         detail = stderr or "unknown parse/generation error"
+        # Older libssynth builds abort (SIGABRT) without a message; the
+        # patched build prints a ParseError with line info and exits 1.
         if proc.returncode in (-6, 134) or "terminate called" in stderr:
-            detail = "EisenScript parse error (line info not reported by engine)."
+            detail = "EisenScript parse error (engine aborted; update ssynthgen for line info)."
         raise ScriptError(detail, returncode=proc.returncode)
 
     if not out.exists() or out.stat().st_size == 0:
@@ -149,4 +149,5 @@ def validate(script: str, timeout: int = 60, binary: str | None = None) -> tuple
     stderr = (proc.stderr or b"").decode("utf-8", "replace").strip()
     if proc.returncode in (-6, 134) or "terminate called" in stderr:
         return False, "Parse error: the engine rejected this EisenScript."
+    # Patched ssynthgen puts line info in stderr, e.g. "... (line 3)".
     return False, stderr or f"Engine failed with exit code {proc.returncode}."

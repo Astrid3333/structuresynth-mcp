@@ -10,17 +10,25 @@ from mcp.server.mcpserver import MCPServer
 
 from . import examples_meta
 from .analyze import analyze
+from .colors import write_mtl
 from .engine import RenderResult, ScriptError, find_ssynthgen, render, validate
 from .export import ExportError, export_mesh
+from .gallery import render_gallery as run_gallery
+from .preview import preview_png
 from .reference import get_reference
+from .unreal_bridge import UnrealNotRunning, import_asset as unreal_import
 
 mcp = MCPServer(
     "structuresynth",
     instructions=(
         "Tools for Structure Synth: write EisenScript grammars and render them "
-        "to 3D meshes (Wavefront OBJ). Use list_examples/get_example to learn the "
-        "language style, validate_script to check syntax, and render_script to "
-        "produce geometry. Engine: libssynth ssynthgen (set SSYNTHGEN_PATH if not on PATH)."
+        "to 3D meshes (Wavefront OBJ) with optional PNG previews, MTL colors, "
+        "format conversion, and Unreal Engine import. Use list_examples/get_example "
+        "to learn the language style, validate_script/analyze_script to check syntax, "
+        "render_script to produce geometry, preview_script for a quick image, "
+        "render_gallery for a batch of examples, export_mesh_tool for STL/glTF, "
+        "and send_to_unreal to push an OBJ into a running Unreal editor. "
+        "Engine: libssynth ssynthgen (set SSYNTHGEN_PATH if not on PATH)."
     ),
 )
 
@@ -156,6 +164,97 @@ def export_mesh_tool(obj_path: str, format: str = "stl", output_path: str = "") 
         return f"Error: {e}"
     size = Path(out).stat().st_size
     return f"Exported: {out} ({size} bytes, format={format.lower().lstrip('.')})"
+
+
+@mcp.tool()
+def preview_script(
+    script: str,
+    output_path: str = "",
+    seed: int | None = None,
+    timeout: int = 120,
+) -> str:
+    """Render an EisenScript and return a PNG preview image path (plus the OBJ).
+
+    Uses matplotlib Agg (CPU only, no GPU). Group colors from the grammar
+    are preserved when present.
+    """
+    try:
+        if output_path:
+            base = Path(output_path).expanduser().with_suffix("")
+        else:
+            fd, name = tempfile.mkstemp(suffix=".obj", prefix="structuresynth_")
+            os.close(fd)
+            base = Path(name).with_suffix("")
+        obj_path = base.with_suffix(".obj")
+        result: RenderResult = render(script, obj_path, seed=seed, timeout=timeout)
+        write_mtl(result.obj_path)  # best-effort, no-op without color groups
+        png = preview_png(result.obj_path, base.with_suffix(".png"))
+    except ScriptError as e:
+        return f"Render failed: {e}"
+    except Exception as e:
+        return f"Error: {e}"
+    return f"OBJ: {result.obj_path}\nPNG: {png}\nVertices: {result.vertices}\nFaces: {result.faces}"
+
+
+@mcp.tool()
+def preview_obj(obj_path: str, output_path: str = "") -> str:
+    """Render an existing OBJ file to a PNG preview (matplotlib Agg, CPU only)."""
+    try:
+        write_mtl(obj_path)  # best-effort MTL for color groups
+        png = preview_png(obj_path, output_path or None)
+    except Exception as e:
+        return f"Error: {e}"
+    return f"PNG: {png}"
+
+
+@mcp.tool()
+def render_gallery(
+    out_dir: str,
+    seed: int | None = None,
+    with_preview: bool = True,
+    timeout: int = 120,
+) -> str:
+    """Batch-render every bundled example to OBJ (+ PNG) in a directory.
+
+    Useful for building a visual gallery or checking regressions.
+    """
+    try:
+        result = run_gallery(out_dir, seed=seed, with_preview=with_preview,
+                             timeout=timeout)
+    except Exception as e:
+        return f"Error: {e}"
+    lines = [f"Gallery: {result.out_dir}",
+             f"OK: {result.ok_count}  Failed: {result.fail_count}"]
+    for item in result.items:
+        status = "OK " if item.ok else "FAIL"
+        detail = f"{item.vertices}v/{item.faces}f" if item.ok else (item.error or "")
+        lines.append(f"  [{status}] {item.name}: {detail}")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def send_to_unreal(
+    obj_path: str,
+    dest_path: str = "/Game/Imported",
+    name: str = "",
+    replace: bool = True,
+) -> str:
+    """Import a rendered OBJ into a running Unreal Engine editor via TCP bridge.
+
+    Requires Unreal running with the MCP plugin listening on 127.0.0.1:55557.
+    The asset lands in the content browser at dest_path (default /Game/Imported).
+    """
+    try:
+        resp = unreal_import(obj_path, dest_path=dest_path, name=name, replace=replace)
+    except UnrealNotRunning as e:
+        return f"Error: {e}"
+    except Exception as e:
+        return f"Error: {e}"
+    if resp.get("success") is False or resp.get("status") == "error":
+        msg = resp.get("message") or resp.get("error") or str(resp)
+        return f"Unreal error: {msg}"
+    asset = resp.get("asset_path") or resp.get("path") or resp
+    return f"Imported into Unreal: {asset}"
 
 
 def main() -> None:

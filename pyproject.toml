@@ -1,6 +1,6 @@
 [project]
 name = "structuresynth-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "MCP server for Structure Synth: render EisenScript grammars to 3D meshes (OBJ) headlessly."
 readme = "README.md"
 license = { text = "MIT" }
@@ -10,7 +10,11 @@ keywords = ["mcp", "structure-synth", "eisenscript", "procedural", "3d", "genera
 dependencies = ["mcp>=2.0"]
 
 [project.optional-dependencies]
-export = ["trimesh>=4.0"]
+export = [
+    "matplotlib>=3.10.9",
+    "pillow>=12.3.0",
+    "trimesh>=4.0",
+]
 
 [project.scripts]
 structuresynth-mcp = "structuresynth_mcp.server:main"
@@ -27,7 +31,7 @@ build-backend = "hatchling.build"
 packages = ["src/structuresynth_mcp"]
 
 [dependency-groups]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "trimesh>=4.0"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "trimesh>=4.0", "matplotlib>=3.10"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -12,10 +12,14 @@ printing, or further processing.
 | Tool | Description |
 | --- | --- |
 | `render_script(script, seed?, output_path?, timeout?)` | Run an EisenScript grammar → `.obj` mesh; returns path, vertex/face counts, bounding box. |
+| `preview_script(script, output_path?, seed?, timeout?)` | Render + return a PNG preview (matplotlib Agg, CPU only). |
+| `preview_obj(obj_path, output_path?)` | PNG preview of an existing OBJ. |
 | `validate_script(script)` | Parse-check a grammar without keeping geometry. |
 | `analyze_script(script)` | Linter: braces, unknown actions, unsupported primitives, recursion without `maxdepth` (timeout risk), unused rules. |
 | `eisenscript_reference()` | Embedded EisenScript cheat sheet (primitives, transformations, modifiers). |
 | `export_mesh_tool(obj_path, format, output_path?)` | Convert OBJ → `stl`/`glb`/`gltf`/`ply`/`off` (requires optional `trimesh`). |
+| `render_gallery(out_dir, seed?, with_preview?)` | Batch-render every bundled example to OBJ (+ PNG). |
+| `send_to_unreal(obj_path, dest_path?, name?)` | Import an OBJ into a running Unreal editor (TCP bridge, port 55557). |
 | `list_examples()` | Browse bundled example grammars. |
 | `get_example(name)` | Fetch the full source of an example. |
 | `engine_status()` | Locate the render engine binary / install hint. |
@@ -23,6 +27,11 @@ printing, or further processing.
 Rendering is powered by **[libssynth](https://github.com/jcelerier/libssynth)**
 (`ssynthgen`), a modernized, Qt-light port of Structure Synth's engine that
 exports OBJ from the command line. This MCP server is a thin Python wrapper.
+
+**Patched engine**: the recommended `ssynthgen` build includes small patches
+(upstream-able) that give parse errors real **line numbers**, exit code 1 instead
+of SIGABRT, and color-group OBJ output (`usemtl #rrggbb` groups, converted to
+`.mtl` by this server). Build instructions below.
 
 ## Requirements
 
@@ -51,7 +60,7 @@ exports OBJ from the command line. This MCP server is a thin Python wrapper.
 git clone https://github.com/Astrid3333/structuresynth-mcp.git
 cd structuresynth-mcp
 uv sync                    # core
-uv sync --extra export     # + trimesh for STL/glTF export
+uv sync --extra export     # + matplotlib/trimesh for preview, STL/glTF export
 ```
 
 ## Run
@@ -111,9 +120,11 @@ and the bundled examples.
 
 - The bundled engine (`libssynth`) covers the core language; a few exotic
   original examples (e.g. `Konstrukt.es`, `Thingy.es`) use primitives or
-  features it does not implement.
-- `validate_script` reports a generic parse error (libssynth does not expose
-  line numbers through the CLI's abort path).
+  features it does not implement (torus, cone, helix, circle, point, tube).
+- Parse errors report `(line N)` when using the patched `ssynthgen` build;
+  the stock upstream build aborts with a generic message.
+- `preview_*` uses matplotlib's software renderer — fine for previews, not
+  ray-traced quality; previews are skipped for meshes above 50k faces.
 - JavaScript animation scripting of the original GUI app is out of scope.
 
 ## License

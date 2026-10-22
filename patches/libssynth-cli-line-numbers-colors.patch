@@ -1,0 +1,150 @@
+diff --git a/src/CommandLine.cpp b/src/CommandLine.cpp
+index 7c616a2..cacbd7e 100644
+--- a/src/CommandLine.cpp
++++ b/src/CommandLine.cpp
+@@ -64,12 +64,13 @@ rule R1 w 10 {
+   }
+ 
+   // QLogger l;
++  QString preprocessed;
+   try
+   {
+     ssynth::Parser::Preprocessor p;
+-    auto preprocessed = p.Process(input);
++    preprocessed = p.Process(input);
+ 
+-    ssynth::Parser::Tokenizer t{std::move(preprocessed)};
++    ssynth::Parser::Tokenizer t{preprocessed};
+     ssynth::Parser::EisenParser e{t};
+ 
+     auto ruleset = std::unique_ptr<ssynth::Model::RuleSet>{e.parseRuleset()};
+@@ -89,7 +90,9 @@ rule R1 w 10 {
+     }
+     else
+     {
+-      ssynth::Model::Rendering::ObjRenderer obj{10, 10, true, false};
++      // groupByColor=true: group names carry the hex color (box#a1b2c3),
++      // which the Python side turns into an MTL file / preview colors.
++      ssynth::Model::Rendering::ObjRenderer obj{10, 10, true, true};
+       ssynth::Model::Builder b(&obj, ruleset.get(), true);
+       b.build();
+ 
+@@ -97,8 +100,33 @@ rule R1 w 10 {
+     }
+     ts.flush();
+   }
++  catch (ssynth::Parser::ParseError& e)
++  {
++    // Position is a char index into the (preprocessed) input; convert to
++    // a 1-based line number for the error message. pos < 0 (End symbol)
++    // means the error is at end-of-input: report no line suffix.
++    int pos = e.getPosition();
++    if (pos >= 0)
++    {
++      int line = 1;
++      int limit = qMin(pos, preprocessed.length());
++      for (int i = 0; i < limit; i++)
++      {
++        if (preprocessed.at(i) == '\n')
++          line++;
++      }
++      fprintf(stderr, "%s (line %d)\n", e.what(), line);
++    }
++    else
++    {
++      fprintf(stderr, "%s (end of input)\n", e.what());
++    }
++    return 1;
++  }
+   catch (std::exception& e)
+   {
+     fprintf(stderr, "%s\n", e.what());
++    return 1;
+   }
++  return 0;
+ }
+diff --git a/src/ssynth/Exception.h b/src/ssynth/Exception.h
+index 91891fa..c2410fd 100644
+--- a/src/ssynth/Exception.h
++++ b/src/ssynth/Exception.h
+@@ -1,6 +1,8 @@
+ #pragma once
+ #include <QString>
+ 
++#include <exception>
++
+ namespace ssynth
+ {
+ namespace Exceptions
+@@ -12,8 +14,9 @@ namespace Exceptions
+ ///  (1) Throw temporaries   (throw Exception("Error occoured");)
+ ///  (2) Catch by reference  ( try {} catch (Exception& e) {} )
+ ///
+-/// (Perhaps this ought to inherit from std::exception?)
+-class Exception
++/// Inherits std::exception so `catch (std::exception&)` in callers
++/// actually catches it (previously it did not, causing std::terminate).
++class Exception : public std::exception
+ {
+ 
+ public:
+@@ -24,8 +27,15 @@ public:
+   /// Returns the error message.
+   QString getMessage() const { return message; }
+ 
++  const char* what() const noexcept override
++  {
++    whatBuf = message.toUtf8();
++    return whatBuf.constData();
++  }
++
+ private:
+   QString message;
++  mutable QByteArray whatBuf;
+ };
+ 
+ }
+diff --git a/src/ssynth/Parser/Tokenizer.cpp b/src/ssynth/Parser/Tokenizer.cpp
+index ef6bc25..d38a6df 100644
+--- a/src/ssynth/Parser/Tokenizer.cpp
++++ b/src/ssynth/Parser/Tokenizer.cpp
+@@ -99,20 +99,21 @@ Tokenizer::Tokenizer(QString input)
+ 
+     if (input.at(i) == '[')
+     {
+-      while (input.at(i) != ']' && i < input.length())
++      // Check bounds before at(): QString::at() asserts on out-of-range.
++      while (i < input.length() && input.at(i) != ']')
+       {
+         current += input.at(i);
+         i++;
+       }
+       current += ']';
+ 
+-      if (input.at(i) != ']')
++      if (i >= input.length() || input.at(i) != ']')
+       {
+         throw ParseError("No matching ']' found for '['", startPos);
+       }
+ 
+       l.push_back(current);
+-      positions.push_back(startPos - newlines);
++      positions.push_back(startPos);
+       startPos = i;
+       current = "";
+     }
+@@ -124,12 +125,12 @@ Tokenizer::Tokenizer(QString input)
+       if (!current.trimmed().isEmpty())
+       {
+         l.push_back(trimmed);
+-        positions.push_back(startPos - newlines);
++        positions.push_back(startPos);
+       }
+       if (input.at(i) == '{' || input.at(i) == '}')
+       {
+         l.push_back(QString(input.at(i)));
+-        positions.push_back(i - newlines);
++        positions.push_back(i);
+       }
+       current = "";
+       startPos = i;
